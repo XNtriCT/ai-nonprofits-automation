@@ -106,6 +106,11 @@ class App(ctk.CTk):
 
         self._build_ui()
 
+        from config import cfg
+        from api_client import DEFAULT_MODELS
+        self.model_var.set(cfg.MODEL or DEFAULT_MODELS.get(cfg.PROVIDER, ""))
+        self.model_menu.configure(values=[cfg.MODEL] if cfg.MODEL else [DEFAULT_MODELS.get(cfg.PROVIDER, "")])
+
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _redraw_bg(self):
@@ -120,7 +125,7 @@ class App(ctk.CTk):
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(5, weight=1)
+        self.grid_rowconfigure(6, weight=1)
 
         # ── Header ──────────────────────────────────────────
         top = ctk.CTkFrame(self, fg_color="transparent")
@@ -248,6 +253,27 @@ class App(ctk.CTk):
         )
         self.logo_corner_menu.grid(row=0, column=3, padx=(0, 16), pady=(12, 12))
 
+        # ── Model row ───────────────────────────────────────
+        model_frame = _glass_panel(self)
+        model_frame.grid(row=4, column=0, padx=28, pady=(0, 8), sticky="ew")
+        model_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            model_frame, text="Model",
+            font=("Helvetica", 10, "normal"),
+            text_color=TEXT2,
+        ).grid(row=0, column=0, padx=(16, 8), pady=(8, 8), sticky="w")
+
+        self.model_var = tk.StringVar(value="")
+        self.model_menu = ctk.CTkOptionMenu(
+            model_frame, values=[""],
+            font=("Helvetica", 11), text_color=TEXT, fg_color=SURFACE2,
+            button_color=SURFACE2, button_hover_color=SURFACE3,
+            dropdown_fg_color=SURFACE, dropdown_text_color=TEXT,
+            dropdown_hover_color=SURFACE2, variable=self.model_var,
+        )
+        self.model_menu.grid(row=0, column=1, padx=(0, 16), pady=(8, 8), sticky="ew")
+
         # ── Run button ──────────────────────────────────────
         self.run_btn = ctk.CTkButton(
             self, text="\u25b6  Run Pipeline",
@@ -257,11 +283,11 @@ class App(ctk.CTk):
             cursor="hand2",
         )
         _style_btn(self.run_btn, accent=True)
-        self.run_btn.grid(row=4, column=0, padx=28, pady=(2, 14), sticky="ew")
+        self.run_btn.grid(row=5, column=0, padx=28, pady=(2, 14), sticky="ew")
 
         # ── Log panel ───────────────────────────────────────
         log_frame = _glass_panel(self)
-        log_frame.grid(row=5, column=0, padx=28, pady=(0, 24), sticky="nsew")
+        log_frame.grid(row=6, column=0, padx=28, pady=(0, 24), sticky="nsew")
         log_frame.grid_rowconfigure(0, weight=1)
         log_frame.grid_columnconfigure(0, weight=1)
 
@@ -299,7 +325,7 @@ class App(ctk.CTk):
 
         dlg = ctk.CTkToplevel(self)
         dlg.title("API Settings")
-        dlg.geometry("540x420")
+        dlg.geometry("540x480")
         dlg.configure(fg_color=BG_DEEP)
         dlg.resizable(False, False)
         dlg.transient(self)
@@ -374,7 +400,7 @@ class App(ctk.CTk):
             font=("Helvetica", 10, "normal"),
             width=60, height=30,
         )
-        _style_btn_border(load_models_btn)
+        _style_btn(load_models_btn)
         load_models_btn.grid(row=ROW["m"], column=_col["b"], padx=(8, 16), pady=7)
 
         test_btn = ctk.CTkButton(
@@ -509,6 +535,11 @@ class App(ctk.CTk):
         load_models_btn.configure(command=_fetch_models)
         test_btn.configure(command=_test_connection)
         _fill_defaults()
+        if self.model_var.get():
+            current = self.model_var.get()
+            vals = model_menu.cget("values")
+            if vals and current in vals:
+                model_var.set(current)
 
         btn_frame = ctk.CTkFrame(panel, fg_color="transparent")
         btn_frame.grid(row=ROW["b"] + 1, column=0, columnspan=3, pady=(12, 12))
@@ -518,6 +549,7 @@ class App(ctk.CTk):
             cfg.API_KEY = _current_key()
             cfg.BASE_URL = _current_base()
             cfg.MODEL = model_var.get()
+            self.model_var.set(model_var.get())
             dlg.destroy()
 
         cancel_btn = ctk.CTkButton(btn_frame, text="Cancel", font=("Helvetica", 11),
@@ -537,6 +569,7 @@ class App(ctk.CTk):
         self.topic_entry.configure(state=state)
         self.logo_btn.configure(state=state)
         self.logo_corner_menu.configure(state=state)
+        self.model_menu.configure(state=state)
         if running:
             self.run_btn.configure(text="\u25b6  Running...", fg_color=ACCENT2)
         else:
