@@ -663,14 +663,15 @@ class App(ctk.CTk):
     def _apply_live_models(self, models):
         self.model_drop.configure(values=models)
         current = self._model_var.get()
-        if current not in models:
+        if not current or current not in models:
             # Try case-insensitive match to protect user's selection
             lowered = {m.lower(): m for m in models}
-            match = lowered.get(current.lower())
+            match = lowered.get(current.lower()) if current else None
             if match:
                 self._model_var.set(match)
-            else:
+            elif not current:
                 self._model_var.set(models[0])
+            # else: user's model was removed from the list — leave it alone
         print(f"[models] Active: {self._model_var.get()}  (provider: {cfg.PROVIDER})")
 
     def _on_run(self):

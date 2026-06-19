@@ -34,11 +34,13 @@ def chat_completion(messages, model=None, temperature=0.7, max_tokens=1000):
     api_key = cfg.API_KEY
     model = model or cfg.MODEL or DEFAULT_MODELS.get(provider, "gpt-4o")
     config = PROVIDER_CONFIGS.get(provider, PROVIDER_CONFIGS["custom"])
+    url = _resolve_url()
+    print(f"[API] provider={provider} model={model} url={url}")
 
     if config["sdk"] == "google":
         return _google_chat(messages, model, api_key, temperature, max_tokens)
     else:
-        return _openai_chat(messages, model, api_key, _resolve_url(), temperature, max_tokens)
+        return _openai_chat(messages, model, api_key, url, temperature, max_tokens)
 
 
 def _openai_chat(messages, model, api_key, base_url, temperature, max_tokens):
