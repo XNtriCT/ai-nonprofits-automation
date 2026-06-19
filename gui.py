@@ -385,7 +385,7 @@ class App(ctk.CTk):
         def _on_model_change(*_):
             val = self._model_var.get()
             cfg.MODEL = val
-            print(f"[model] Selected: {val}")
+            print(f"[model] \u2192 {val}  (provider: {cfg.PROVIDER})")
         self._model_var.trace_add("write", _on_model_change)
         self.model_drop = ModelDropdown(model_frame, variable=self._model_var)
         self.model_drop.grid(row=0, column=1, padx=(0, 16), pady=(8, 8), sticky="ew")
@@ -664,8 +664,14 @@ class App(ctk.CTk):
         self.model_drop.configure(values=models)
         current = self._model_var.get()
         if current not in models:
-            self._model_var.set(models[0])
-        print(f"[models] Active: {self._model_var.get()}")
+            # Try case-insensitive match to protect user's selection
+            lowered = {m.lower(): m for m in models}
+            match = lowered.get(current.lower())
+            if match:
+                self._model_var.set(match)
+            else:
+                self._model_var.set(models[0])
+        print(f"[models] Active: {self._model_var.get()}  (provider: {cfg.PROVIDER})")
 
     def _on_run(self):
         if self._running:
