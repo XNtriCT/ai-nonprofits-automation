@@ -21,21 +21,12 @@ Style:
 - Each post has ONE strong takeaway, not a list
 - Output ONLY the caption — no thinking, no analysis, no drafts, no reasoning"""
 
-USER_PROMPT_TEMPLATE = """Make a better market researched short caption for a insta post inspired from this topic. Include comma separated market researched keywords(not hashtags) that are relevant instead of made-up, all of them enclosed inside square brackets at the bottom. Include a very short CTA to AI for Nonprofits transitioning seamlessly. Verify against the live official source before answering. Note: Make sure to avoid utter cliches which doesn't say anything about the actual news. Avoid the cliches like AI is becoming infrastructure, not experimentation. AI becoming this, not that... kind of cliche captions.
-
-AI News Update: {news_title}
-
-Source: {news_url}
-
-Summary: {news_summary}"""
+USER_PROMPT_TEMPLATE = "Make a better market researched short caption for a insta post inspired from this topic. Include comma separated market researched keywords(not hashtags) that are relevant instead of made-up, all of them enclosed inside square brackets at the bottom. Include a very short CTA to AI for Nonprofits transitioning seamlessly. Verify against the live official source before answering. Note: Make sure to avoid utter cliches which doesn't say anything about the actual news. Avoid the cliches like AI is becoming infrastructure, not experimentation. AI becoming this, not that... kind of cliche captions: {AI News Update}"
 
 
 def generate_caption(news_item):
-    user_prompt = USER_PROMPT_TEMPLATE.format(
-        news_title=news_item.get("title", ""),
-        news_url=news_item.get("url", ""),
-        news_summary=news_item.get("summary", ""),
-    )
+    ai_update = f"{news_item.get('title', '')}\nSource: {news_item.get('url', '')}\n{news_item.get('summary', '')}"
+    user_prompt = USER_PROMPT_TEMPLATE.replace("{AI News Update}", ai_update)
 
     try:
         caption = chat_completion(
