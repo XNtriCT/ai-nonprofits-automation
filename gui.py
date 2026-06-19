@@ -382,7 +382,11 @@ class App(ctk.CTk):
         ).grid(row=0, column=0, padx=(16, 8), pady=(8, 8), sticky="w")
 
         self._model_var = tk.StringVar(value="")
-        self._model_var.trace_add("write", lambda *_: setattr(cfg, "MODEL", self._model_var.get()))
+        def _on_model_change(*_):
+            val = self._model_var.get()
+            cfg.MODEL = val
+            print(f"[model] Selected: {val}")
+        self._model_var.trace_add("write", _on_model_change)
         self.model_drop = ModelDropdown(model_frame, variable=self._model_var)
         self.model_drop.grid(row=0, column=1, padx=(0, 16), pady=(8, 8), sticky="ew")
 
