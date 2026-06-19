@@ -1,6 +1,5 @@
 from pathlib import Path
-from openai import OpenAI
-from config import cfg
+from api_client import chat_completion
 
 _RULES_PATH = Path(__file__).parent / "image_prompt_rules.md"
 _EXTRA_RULES = ""
@@ -29,16 +28,13 @@ Caption: {caption}"""
 
 
 def generate_image_prompt(news_item, caption):
-    client = OpenAI(api_key=cfg.FREELLMAPI_KEY, base_url=cfg.FREELLMAPI_BASE)
-
     user_prompt = USER_PROMPT_TEMPLATE.format(
         news_title=news_item.get("title", ""),
         caption=caption,
     )
 
     try:
-        resp = client.chat.completions.create(
-            model=cfg.FREELLMAPI_MODEL,
+        prompt = chat_completion(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
@@ -46,7 +42,6 @@ def generate_image_prompt(news_item, caption):
             temperature=0.7,
             max_tokens=800,
         )
-        prompt = resp.choices[0].message.content.strip()
         return prompt
     except Exception as e:
         print(f"[image_prompt_gen] Error: {e}")

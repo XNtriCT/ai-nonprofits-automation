@@ -157,6 +157,34 @@ def _add_watermark(image_path):
     print(f"[watermark] Applied to {image_path}")
 
 
+def _add_logo(image_path, logo_path, corner="br"):
+    from PIL import Image
+    if not logo_path or not os.path.exists(logo_path):
+        return
+    img = Image.open(image_path).convert("RGBA")
+    logo = Image.open(logo_path).convert("RGBA")
+
+    logo_w = int(img.width * 0.08)
+    logo_h = int(logo.height * (logo_w / logo.width))
+    logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+
+    pad = 12
+    corners = {
+        "br": (img.width - logo_w - pad, img.height - logo_h - pad),
+        "bl": (pad, img.height - logo_h - pad),
+        "tr": (img.width - logo_w - pad, pad),
+        "tl": (pad, pad),
+    }
+    x, y = corners.get(corner, corners["br"])
+
+    if logo.mode == "RGBA":
+        img.paste(logo, (x, y), logo)
+    else:
+        img.paste(logo, (x, y))
+
+    img.convert("RGB").save(image_path, quality=98)
+    print(f"[logo] Applied to {image_path}")
+
 
 def _find_input(page):
     for sel in ["#prompt-textarea", "textarea[placeholder*='Message ChatGPT']", "textarea[placeholder*='Message']", "div[contenteditable='true']"]:
@@ -166,7 +194,7 @@ def _find_input(page):
     return None, None
 
 
-def generate_image(prompt, output_path):
+def generate_image(prompt, output_path, logo_path=None, logo_corner="br"):
     from playwright.sync_api import sync_playwright
 
     prompt = _clean_prompt(prompt)
@@ -239,6 +267,7 @@ def generate_image(prompt, output_path):
         img_url = _wait_for_image(page)
         if img_url and _download_image(page, img_url, output_path):
             _add_watermark(output_path)
+            _add_logo(output_path, logo_path, logo_corner)
             if brave_proc:
                 try:
                     brave_proc.terminate()

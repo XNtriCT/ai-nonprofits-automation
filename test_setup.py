@@ -2,7 +2,6 @@
 
 import os
 import sys
-import json
 
 print("=" * 50)
 print("AI for Nonprofits — Setup Verification")
@@ -12,28 +11,24 @@ print("=" * 50)
 print("\n[1] Checking configuration...")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import cfg
-print(f"  FreeLLMAPI: {cfg.FREELLMAPI_BASE}")
-print(f"  Model: {cfg.FREELLMAPI_MODEL}")
+from api_client import PROVIDER_CONFIGS
+pcfg = PROVIDER_CONFIGS.get(cfg.PROVIDER, PROVIDER_CONFIGS["custom"])
+print(f"  Provider: {cfg.PROVIDER}")
+print(f"  Base URL: {cfg.BASE_URL or pcfg.get('base_url', '(default)')}")
+print(f"  Model: {cfg.MODEL or cfg.FREELLMAPI_MODEL}")
 print(f"  Brave: {os.path.exists(cfg.BRAVE_PATH)}")
-print(f"  Brave User Data: {os.path.exists(cfg.BRAVE_USER_DATA)}")
 tg_ok = bool(cfg.TELEGRAM_BOT_TOKEN and cfg.TELEGRAM_CHAT_ID)
 print(f"  Telegram configured: {tg_ok}")
 
-# 2. Test FreeLLMAPI
-print("\n[2] Testing FreeLLMAPI connection...")
-import requests
+# 2. Test API connection
+print("\n[2] Testing API connection...")
+from api_client import chat_completion
 try:
-    r = requests.post(f"{cfg.FREELLMAPI_BASE}/chat/completions",
-        json={
-            "model": cfg.FREELLMAPI_MODEL,
-            "messages": [{"role": "user", "content": "Say hello in one word"}],
-            "max_tokens": 20,
-        }, timeout=15)
-    if r.status_code == 200:
-        reply = r.json()["choices"][0]["message"]["content"]
-        print(f"  OK — Response: {reply}")
-    else:
-        print(f"  ERROR — Status {r.status_code}: {r.text[:200]}")
+    reply = chat_completion(
+        messages=[{"role": "user", "content": "Say hello in one word"}],
+        max_tokens=20,
+    )
+    print(f"  OK — Response: {reply}")
 except Exception as e:
     print(f"  ERROR — {e}")
 

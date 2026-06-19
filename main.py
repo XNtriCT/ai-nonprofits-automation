@@ -28,7 +28,7 @@ from telegram_sender import send_photo_to_telegram, send_text_to_telegram
 from history_store import history
 
 
-def run_pipeline(dry_run=False, custom_topic=None):
+def run_pipeline(dry_run=False, custom_topic=None, logo_path=None, logo_corner="br"):
     print("=" * 60)
     print(f"  AI for Nonprofits — Pipeline Run")
     print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -80,7 +80,7 @@ def run_pipeline(dry_run=False, custom_topic=None):
             image_path = None
         else:
             start = time.time()
-            image_path = generate_image(image_prompt, output_path)
+            image_path = generate_image(image_prompt, output_path, logo_path, logo_corner)
             elapsed = time.time() - start
             print(f"  Image generated in {elapsed:.1f}s: {image_path}")
 

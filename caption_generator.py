@@ -1,5 +1,4 @@
-from openai import OpenAI
-from config import cfg
+from api_client import chat_completion
 
 SYSTEM_PROMPT = """You are "AI for Nonprofits" — a LinkedIn page that covers how AI is transforming the social impact sector globally.
 
@@ -32,8 +31,6 @@ Summary: {news_summary}"""
 
 
 def generate_caption(news_item):
-    client = OpenAI(api_key=cfg.FREELLMAPI_KEY, base_url=cfg.FREELLMAPI_BASE)
-
     user_prompt = USER_PROMPT_TEMPLATE.format(
         news_title=news_item.get("title", ""),
         news_url=news_item.get("url", ""),
@@ -41,8 +38,7 @@ def generate_caption(news_item):
     )
 
     try:
-        resp = client.chat.completions.create(
-            model=cfg.FREELLMAPI_MODEL,
+        caption = chat_completion(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
@@ -50,7 +46,6 @@ def generate_caption(news_item):
             temperature=0.8,
             max_tokens=1500,
         )
-        caption = resp.choices[0].message.content.strip()
         return caption
     except Exception as e:
         print(f"[caption_gen] Error: {e}")

@@ -3,7 +3,6 @@ import sys
 import io
 import threading
 import tkinter as tk
-import requests
 from pathlib import Path
 
 import customtkinter as ctk
@@ -11,13 +10,62 @@ import customtkinter as ctk
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
-FG = "#1c1c1c"
-FG2 = "#242424"
-FG3 = "#2e2e2e"
-TEXT = "#d4d0c8"
-TEXT2 = "#9a948a"
-ACCENT = "#8b7d6b"
-BORDER = "#3a3a3a"
+# ── Premium palette (cool indigo/platinum, no gold) ──────────
+BG_DEEP = "#07070d"
+BG_MID  = "#0a0814"
+BG_LITE = "#0e0a1a"
+SURFACE   = "#0c0c1e"
+SURFACE2  = "#12122a"
+SURFACE3  = "#181838"
+TEXT      = "#e0e0ee"
+TEXT2     = "#8888a0"
+TEXT3     = "#505068"
+ACCENT    = "#5c6cf0"
+ACCENT2   = "#3a48c0"
+BORDER    = "#1a1a38"
+BORDER2   = "#282850"
+INPUT_BG  = "#08081a"
+
+_GRADIENT = ["#07070d", "#090715", "#0b0818", "#0d081a", "#0e081c", "#0c0818", "#0a0714"]
+
+def _draw_gradient(canvas, w, h):
+    bands = max(len(_GRADIENT), 2)
+    bh = h / bands
+    for i, c in enumerate(_GRADIENT):
+        canvas.create_rectangle(0, i * bh, w, (i + 1) * bh, fill=c, outline="")
+
+def _draw_blobs(canvas, w, h):
+    """Subtle glowing orbs behind glass panels."""
+    import math
+    spots = [
+        (w * 0.15, h * 0.25, 140, "#181848"),
+        (w * 0.85, h * 0.55, 180, "#141450"),
+        (w * 0.50, h * 0.80, 120, "#101048"),
+        (w * 0.75, h * 0.15, 100, "#1a1848"),
+    ]
+    for cx, cy, r, color in spots:
+        canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=color, outline="")
+
+def _glass_panel(parent):
+    f = ctk.CTkFrame(parent, fg_color=SURFACE, border_color=BORDER, border_width=1, corner_radius=12)
+    return f
+
+def _style_entry(entry):
+    entry.configure(fg_color=INPUT_BG, text_color=TEXT, border_color=BORDER,
+                    placeholder_text_color=TEXT2, border_width=1)
+
+def _style_btn(btn, accent=False):
+    if accent:
+        btn.configure(fg_color=ACCENT, text_color="#ffffff", hover_color=ACCENT2,
+                      border_color=ACCENT, border_width=0)
+    else:
+        btn.configure(fg_color=SURFACE2, text_color=TEXT, hover_color=SURFACE3,
+                      border_color=BORDER2, border_width=1)
+
+def _deco_line(parent, row, col, padx, pady):
+    f = ctk.CTkFrame(parent, height=1, fg_color=BORDER)
+    f.grid(row=row, column=col, padx=padx, pady=pady, sticky="ew")
+    return f
 
 
 class LogRedirector(io.StringIO):
@@ -34,143 +82,7 @@ class LogRedirector(io.StringIO):
         pass
 
 
-class ModelSelector(ctk.CTkFrame):
-    """Model picker — lightweight tk.Listbox popup, no flicker, instant scroll."""
 
-    POPUP_W = 500
-    POPUP_H = 560
-
-    def __init__(self, master, values, initial="", on_select=None, **kwargs):
-        super().__init__(master, fg_color="transparent", **kwargs)
-        self.grid_columnconfigure(0, weight=1)
-
-        self._all = values
-        self._on_select = on_select
-        self._selected = initial if initial in values else (values[0] if values else "")
-        self._popup = None
-
-        self._entry = ctk.CTkEntry(
-            self, font=("Menlo", 10), text_color=TEXT,
-            fg_color=FG2, border_color=BORDER, border_width=1, height=30,
-        )
-        self._entry.insert(0, self._selected)
-        self._entry.configure(state="readonly")
-        self._entry.grid(row=0, column=0, sticky="ew")
-        self._entry.bind("<Button-1>", self._toggle, add="+")
-
-        self._btn = ctk.CTkButton(
-            self, text="\u25bc",
-            font=("Menlo", 8), text_color=TEXT2,
-            fg_color=FG3, hover_color=FG2,
-            border_color=BORDER, border_width=1,
-            width=28, height=30, command=self._toggle,
-        )
-        self._btn.grid(row=0, column=1)
-
-    def get(self):
-        return self._selected
-
-    def set(self, value):
-        if value in self._all or not self._all:
-            self._selected = value
-            self._entry.configure(state="normal")
-            self._entry.delete(0, "end")
-            self._entry.insert(0, value)
-            self._entry.configure(state="readonly")
-
-    def configure_values(self, values, initial=None):
-        self._all = values
-        if initial:
-            self.set(initial)
-        elif self._selected not in values:
-            self.set(values[0] if values else "")
-
-    def configure_state(self, state):
-        self._entry.configure(state=state if state == "disabled" else "readonly")
-        self._btn.configure(state=state)
-
-    def _toggle(self):
-        if self._popup and self._popup.winfo_exists():
-            self._close()
-        else:
-            self._open()
-
-    def _open(self):
-        if not self._all:
-            return
-
-        self._popup = ctk.CTkToplevel(self)
-        self._popup.withdraw()
-        self._popup.title("")
-        self._popup.configure(fg_color=FG2)
-        self._popup.attributes("-topmost", True)
-        self._popup.transient(self.winfo_toplevel())
-        self._popup.resizable(False, False)
-        self._popup.protocol("WM_DELETE_WINDOW", self._close)
-
-        x = self.winfo_rootx()
-        y = self.winfo_rooty() + self.winfo_height()
-        self._popup.geometry(f"{self.POPUP_W}x{self.POPUP_H}+{x}+{y}")
-
-        frame = tk.Frame(self._popup, bg=FG2)
-        frame.pack(fill="both", expand=True, padx=4, pady=4)
-
-        sb = tk.Scrollbar(frame, bg=FG3, troughcolor=FG2,
-                          activebackground=ACCENT)
-        sb.pack(side="right", fill="y")
-
-        self._lb = tk.Listbox(
-            frame,
-            yscrollcommand=sb.set,
-            bg=FG2, fg=TEXT,
-            selectbackground=FG3, selectforeground=TEXT,
-            font=("Menlo", 10),
-            borderwidth=0, highlightthickness=0,
-            activestyle="none",
-            exportselection=False,
-        )
-        self._lb.pack(side="left", fill="both", expand=True)
-        sb.config(command=self._lb.yview)
-
-        for val in self._all:
-            self._lb.insert("end", val)
-
-        if self._selected in self._all:
-            idx = self._all.index(self._selected)
-            self._lb.selection_set(idx)
-            self._lb.see(idx)
-
-        self._lb.bind("<ButtonRelease-1>", self._on_lb_click)
-        self._lb.bind("<Double-Button-1>", self._on_lb_click)
-        self._popup.bind("<Escape>", lambda e: self._close())
-
-        self._popup.deiconify()
-        self._popup.grab_set()
-        self._popup.focus_set()
-        self._lb.focus_set()
-
-    def _on_lb_click(self, event):
-        sel = self._lb.curselection()
-        if sel:
-            self._pick(self._all[sel[0]])
-
-    def _pick(self, value):
-        self._selected = value
-        self._entry.configure(state="normal")
-        self._entry.delete(0, "end")
-        self._entry.insert(0, value)
-        self._entry.configure(state="readonly")
-        if self._on_select:
-            self._on_select(value)
-        self._close()
-
-    def _close(self, event=None):
-        if self._popup:
-            try:
-                self._popup.destroy()
-            except:
-                pass
-            self._popup = None
 
 
 
@@ -179,119 +91,177 @@ class App(ctk.CTk):
         super().__init__()
 
         self.title("AI for Nonprofits")
-        self.geometry("640x520")
-        self.minsize(560, 420)
-        self.configure(fg_color=FG)
+        self.geometry("640x560")
+        self.minsize(580, 480)
+        self.configure(fg_color=BG_DEEP)
 
         self._running = False
         self._stdout_redirected = False
 
-        self._models = []
-        self._load_models()
+        # ── Canvas for gradient + blobs ─────────────────────
+        self.bg_canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0)
+        self.bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
+        self.bind("<Configure>", self._on_resize_bg, add="+")
+        self.after(50, self._redraw_bg)
 
         self._build_ui()
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _redraw_bg(self):
+        w = self.winfo_width() or 640
+        h = self.winfo_height() or 560
+        self.bg_canvas.delete("all")
+        _draw_gradient(self.bg_canvas, w, h)
+        _draw_blobs(self.bg_canvas, w, h)
+
+    def _on_resize_bg(self, event=None):
+        self._redraw_bg()
+
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(7, weight=1)
+        self.grid_rowconfigure(5, weight=1)
 
-        header = ctk.CTkLabel(
-            self, text="AI FOR NONPROFITS",
+        # ── Header ──────────────────────────────────────────
+        top = ctk.CTkFrame(self, fg_color="transparent")
+        top.grid(row=0, column=0, padx=28, pady=(24, 2), sticky="ew")
+        top.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            top, text="AI FOR NONPROFITS",
+            font=("Helvetica", 13, "normal"),
+            text_color=TEXT,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+
+        ctk.CTkLabel(
+            top, text="/",
+            font=("Helvetica", 13, "normal"),
+            text_color=TEXT3,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w", padx=(140, 0))
+
+        ctk.CTkLabel(
+            top, text="Automation",
             font=("Helvetica", 13, "normal"),
             text_color=TEXT2,
             anchor="w",
+        ).grid(row=0, column=0, sticky="w", padx=(154, 0))
+
+        gear_btn = ctk.CTkButton(
+            top, text="\u2699",
+            font=("Helvetica", 15, "normal"),
+            text_color=TEXT2, fg_color="transparent",
+            hover_color=SURFACE2, width=32, height=32,
+            command=self._on_settings, cursor="hand2",
         )
-        header.grid(row=0, column=0, padx=24, pady=(20, 4), sticky="w")
+        gear_btn.grid(row=0, column=1, sticky="e")
 
-        line = ctk.CTkFrame(self, height=1, fg_color=BORDER)
-        line.grid(row=1, column=0, padx=24, pady=(0, 16), sticky="ew")
+        _deco_line(self, 1, 0, 28, (0, 16))
 
-        topic_frame = ctk.CTkFrame(self, fg_color="transparent")
-        topic_frame.grid(row=2, column=0, padx=24, pady=(0, 8), sticky="ew")
-        topic_frame.grid_columnconfigure(1, weight=1)
+        # ── Topic panel ─────────────────────────────────────
+        panel1 = _glass_panel(self)
+        panel1.grid(row=2, column=0, padx=28, pady=(0, 8), sticky="ew")
+        panel1.grid_columnconfigure(1, weight=1)
 
-        topic_label = ctk.CTkLabel(
-            topic_frame, text="Topic",
-            font=("Helvetica", 11, "normal"),
-            text_color=TEXT2,
-        )
-        topic_label.grid(row=0, column=0, padx=(0, 8), pady=0, sticky="w")
-
-        self.topic_entry = ctk.CTkEntry(
-            topic_frame,
-            placeholder_text="Leave empty to auto-fetch news",
-            fg_color=FG2,
-            text_color=TEXT,
-            placeholder_text_color=TEXT2,
-            border_color=BORDER,
-            border_width=1,
-            font=("Helvetica", 12),
-            height=34,
-        )
-        self.topic_entry.grid(row=0, column=1, padx=(0, 8), pady=0, sticky="ew")
-
-        self.go_btn = ctk.CTkButton(
-            topic_frame, text="Go",
-            font=("Helvetica", 11, "normal"),
-            text_color=TEXT,
-            fg_color=FG3,
-            hover_color=FG2,
-            border_color=ACCENT,
-            border_width=1,
-            width=56,
-            height=34,
-            command=self._on_go,
-        )
-        self.go_btn.grid(row=0, column=2, padx=0, pady=0)
-
-        note = ctk.CTkLabel(
-            self,
-            text="Enter a custom news topic to skip news-fetching, or leave empty and click Run below",
+        ctk.CTkLabel(
+            panel1, text="Topic",
             font=("Helvetica", 10, "normal"),
             text_color=TEXT2,
+        ).grid(row=0, column=0, padx=(16, 8), pady=(14, 4), sticky="w")
+
+        self.topic_entry = ctk.CTkEntry(
+            panel1,
+            placeholder_text="Leave empty to auto-fetch news",
+            font=("Helvetica", 12), height=36,
+        )
+        _style_entry(self.topic_entry)
+        self.topic_entry.grid(row=0, column=1, padx=(0, 8), pady=(14, 4), sticky="ew")
+
+        self.go_btn = ctk.CTkButton(
+            panel1, text="Go",
+            font=("Helvetica", 10, "normal"),
+            width=48, height=36, command=self._on_go,
+        )
+        _style_btn(self.go_btn)
+        self.go_btn.grid(row=0, column=2, padx=(0, 16), pady=(14, 4))
+
+        ctk.CTkLabel(
+            panel1,
+            text="Enter a custom topic or leave empty",
+            font=("Helvetica", 10, "normal"),
+            text_color=TEXT3,
             anchor="w",
-        )
-        note.grid(row=3, column=0, padx=24, pady=(0, 8), sticky="w")
+        ).grid(row=1, column=0, columnspan=3, padx=16, pady=(0, 10), sticky="w")
 
-        model_frame = ctk.CTkFrame(self, fg_color="transparent")
-        model_frame.grid(row=4, column=0, padx=24, pady=(0, 12), sticky="ew")
-        model_frame.grid_columnconfigure(1, weight=1)
+        # ── Logo panel ──────────────────────────────────────
+        panel2 = _glass_panel(self)
+        panel2.grid(row=3, column=0, padx=28, pady=(0, 8), sticky="ew")
+        panel2.grid_columnconfigure(1, weight=1)
 
-        model_label = ctk.CTkLabel(
-            model_frame, text="Model",
-            font=("Helvetica", 11, "normal"),
+        ctk.CTkLabel(
+            panel2, text="Logo",
+            font=("Helvetica", 10, "normal"),
             text_color=TEXT2,
+        ).grid(row=0, column=0, padx=(16, 8), pady=(12, 12), sticky="w")
+
+        self._logo_path = tk.StringVar(value="")
+        self.logo_entry = ctk.CTkEntry(
+            panel2,
+            placeholder_text="Select a logo image (optional)",
+            font=("Helvetica", 12), height=36, state="disabled",
         )
-        model_label.grid(row=0, column=0, padx=(0, 8), pady=0, sticky="w")
+        _style_entry(self.logo_entry)
+        self.logo_entry.grid(row=0, column=1, padx=(0, 6), pady=(12, 12), sticky="ew")
 
-        from config import cfg
-        current_model = cfg.FREELLMAPI_MODEL
+        def _browse_logo():
+            from tkinter import filedialog
+            path = filedialog.askopenfilename(
+                title="Select Logo Image",
+                filetypes=[("Image files", "*.png *.jpg *.jpeg *.webp")]
+            )
+            if path:
+                self._logo_path.set(path)
+                self.logo_entry.configure(state="normal")
+                self.logo_entry.delete(0, "end")
+                self.logo_entry.insert(0, path)
+                self.logo_entry.configure(state="disabled")
 
-        self.model_selector = ModelSelector(
-            model_frame,
-            values=self._models if self._models else [current_model],
-            initial=current_model,
-            on_select=self._on_model_change,
+        self.logo_btn = ctk.CTkButton(
+            panel2, text="Browse",
+            font=("Helvetica", 10, "normal"),
+            width=56, height=36, command=_browse_logo,
         )
-        self.model_selector.grid(row=0, column=1, padx=0, pady=0, sticky="ew")
+        _style_btn(self.logo_btn)
+        self.logo_btn.grid(row=0, column=2, padx=(0, 6), pady=(12, 12))
 
+        _OPTIONS = ["Bottom Right", "Bottom Left", "Top Right", "Top Left"]
+        self.logo_corner_var = tk.StringVar(value="Bottom Right")
+        self.logo_corner_menu = ctk.CTkOptionMenu(
+            panel2, values=_OPTIONS,
+            font=("Helvetica", 10, "normal"),
+            text_color=TEXT, fg_color=SURFACE2,
+            button_color=SURFACE2, button_hover_color=SURFACE3,
+            dropdown_fg_color=SURFACE, dropdown_text_color=TEXT,
+            dropdown_hover_color=SURFACE2, width=120, height=36,
+            variable=self.logo_corner_var,
+        )
+        self.logo_corner_menu.grid(row=0, column=3, padx=(0, 16), pady=(12, 12))
+
+        # ── Run button ──────────────────────────────────────
         self.run_btn = ctk.CTkButton(
-            self, text="Run Pipeline",
+            self, text="\u25b6  Run Pipeline",
             font=("Helvetica", 12, "normal"),
-            text_color=TEXT,
-            fg_color=FG3,
-            hover_color=FG2,
-            border_color=ACCENT,
-            border_width=1,
-            height=38,
+            height=44,
             command=self._on_run,
+            cursor="hand2",
         )
-        self.run_btn.grid(row=6, column=0, padx=24, pady=(0, 16), sticky="ew")
+        _style_btn(self.run_btn, accent=True)
+        self.run_btn.grid(row=4, column=0, padx=28, pady=(2, 14), sticky="ew")
 
-        log_frame = ctk.CTkFrame(self, fg_color=FG2, border_color=BORDER, border_width=1)
-        log_frame.grid(row=7, column=0, padx=24, pady=(0, 20), sticky="nsew")
+        # ── Log panel ───────────────────────────────────────
+        log_frame = _glass_panel(self)
+        log_frame.grid(row=5, column=0, padx=28, pady=(0, 24), sticky="nsew")
         log_frame.grid_rowconfigure(0, weight=1)
         log_frame.grid_columnconfigure(0, weight=1)
 
@@ -299,12 +269,12 @@ class App(ctk.CTk):
             log_frame,
             font=("Menlo", 10),
             text_color=TEXT,
-            fg_color=FG2,
+            fg_color="transparent",
             border_width=0,
             wrap="word",
             state="disabled",
         )
-        self.log_text.grid(row=0, column=0, padx=8, pady=8, sticky="nsew")
+        self.log_text.grid(row=0, column=0, padx=12, pady=12, sticky="nsew")
 
         self._log("Waiting for you to start...\n")
 
@@ -317,22 +287,247 @@ class App(ctk.CTk):
     def _log(self, text):
         self._append_text(text)
 
-    def _load_models(self):
-        from config import cfg
-        try:
-            r = requests.get(f"{cfg.FREELLMAPI_BASE}/models", timeout=10)
-            data = r.json()
-            ids = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
-            ids.sort()
-            self._models = ids
-        except Exception as e:
-            print(f"[models] Failed to fetch: {e}")
-            self._models = []
+    _CORNER_MAP = {
+        "Bottom Right": "br", "Bottom Left": "bl",
+        "Top Right": "tr", "Top Left": "tl",
+    }
 
-    def _on_model_change(self, choice):
+    def _on_settings(self):
         from config import cfg
-        cfg.FREELLMAPI_MODEL = choice
-        print(f"[models] Set to: {choice}")
+        from api_client import PROVIDER_CONFIGS, DEFAULT_MODELS
+        import time as _time
+
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("API Settings")
+        dlg.geometry("540x420")
+        dlg.configure(fg_color=BG_DEEP)
+        dlg.resizable(False, False)
+        dlg.transient(self)
+        dlg.grab_set()
+
+        panel = _glass_panel(dlg)
+        panel.pack(fill="both", expand=True, padx=20, pady=18)
+        panel.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            panel, text="API Settings",
+            font=("Helvetica", 13, "normal"), text_color=TEXT,
+        ).grid(row=0, column=0, columnspan=3, padx=16, pady=(14, 10), sticky="w")
+
+        _deco_line(panel, 1, 0, 16, (0, 6))
+
+        provider_keys = list(PROVIDER_CONFIGS.keys())
+        provider_labels = [PROVIDER_CONFIGS[k]["label"] for k in provider_keys]
+        label_to_key = {PROVIDER_CONFIGS[k]["label"]: k for k in provider_keys}
+
+        _KNOWN = {
+            "freellmapi": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+            "openrouter": ["openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free", "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free", "meta-llama/llama-3.3-70b-instruct:free"],
+            "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "meta-llama/llama-4-maverick-17b-128e-instruct", "meta-llama/llama-4-scout-17b-16e-instruct", "mixtral-8x7b-32768", "gemma2-9b-it", "deepseek-r1-distill-llama-70b"],
+            "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro"],
+            "google": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-pro", "gemini-1.5-pro", "gemini-1.5-flash"],
+        }
+
+        ROW = {"p": 2, "k": 3, "u": 4, "m": 5, "t": 6, "b": 7}
+        _col = {"l": 0, "f": 1, "b": 2}
+
+        def _dlg_label(text, r):
+            ctk.CTkLabel(panel, text=text, font=("Helvetica", 11),
+                         text_color=TEXT2).grid(row=r, column=_col["l"], padx=(16, 8), pady=7, sticky="w")
+
+        _dlg_label("Provider", ROW["p"])
+        provider_var = tk.StringVar(value=PROVIDER_CONFIGS.get(cfg.PROVIDER, PROVIDER_CONFIGS["custom"])["label"])
+        provider_menu = ctk.CTkOptionMenu(
+            panel, values=provider_labels,
+            font=("Helvetica", 11), text_color=TEXT, fg_color=SURFACE2,
+            button_color=SURFACE2, button_hover_color=SURFACE,
+            dropdown_fg_color=SURFACE, dropdown_text_color=TEXT,
+            dropdown_hover_color=SURFACE2, variable=provider_var,
+        )
+        provider_menu.grid(row=ROW["p"], column=_col["f"], pady=7, sticky="ew")
+
+        _dlg_label("API Key", ROW["k"])
+        key_entry = ctk.CTkEntry(panel, font=("Helvetica", 11))
+        _style_entry(key_entry)
+        key_entry.insert(0, cfg.API_KEY)
+        key_entry.grid(row=ROW["k"], column=_col["f"], pady=7, sticky="ew")
+
+        _dlg_label("Base URL", ROW["u"])
+        url_entry = ctk.CTkEntry(panel, font=("Helvetica", 11))
+        _style_entry(url_entry)
+        url_entry.insert(0, cfg.BASE_URL)
+        url_entry.grid(row=ROW["u"], column=_col["f"], pady=7, sticky="ew")
+
+        _dlg_label("Model", ROW["m"])
+        model_var = tk.StringVar(value="")
+        model_menu = ctk.CTkOptionMenu(
+            panel, values=[""],
+            font=("Helvetica", 11), text_color=TEXT, fg_color=SURFACE2,
+            button_color=SURFACE2, button_hover_color=SURFACE,
+            dropdown_fg_color=SURFACE, dropdown_text_color=TEXT,
+            dropdown_hover_color=SURFACE2, variable=model_var,
+        )
+        model_menu.grid(row=ROW["m"], column=_col["f"], pady=7, sticky="ew")
+
+        load_models_btn = ctk.CTkButton(
+            panel, text="\u21bb Load",
+            font=("Helvetica", 10, "normal"),
+            width=60, height=30,
+        )
+        _style_btn_border(load_models_btn)
+        load_models_btn.grid(row=ROW["m"], column=_col["b"], padx=(8, 16), pady=7)
+
+        test_btn = ctk.CTkButton(
+            panel, text="Test Connection",
+            font=("Helvetica", 11, "normal"), height=32,
+        )
+        _style_btn(test_btn, accent=True)
+        test_btn.grid(row=ROW["t"], column=_col["l"], padx=(16, 0), pady=7, sticky="w")
+
+        test_status_var = tk.StringVar(value="")
+        test_status_label = ctk.CTkLabel(
+            panel, textvariable=test_status_var,
+            font=("Helvetica", 10), text_color=TEXT2, anchor="w",
+        )
+        test_status_label.grid(row=ROW["t"], column=_col["f"], columnspan=2, padx=(12, 16), pady=7, sticky="w")
+
+        sep = ctk.CTkFrame(panel, height=1, fg_color=BORDER)
+        sep.grid(row=ROW["b"], column=0, columnspan=3, padx=16, pady=(6, 2), sticky="ew")
+
+        # ── helpers ──────────────────────────────────────────
+
+        def _get_pk():
+            return label_to_key.get(provider_var.get(), "custom")
+
+        def _get_pcfg():
+            return PROVIDER_CONFIGS.get(_get_pk(), PROVIDER_CONFIGS["custom"])
+
+        def _current_base():
+            return url_entry.get().strip() or _get_pcfg().get("base_url", "")
+
+        def _current_key():
+            return key_entry.get().strip()
+
+        def _populate_models(models, select=None):
+            if not models:
+                models = [DEFAULT_MODELS.get(_get_pk(), "")]
+            current = select or model_var.get()
+            model_menu.configure(values=models)
+            model_var.set(current if current in models else models[0])
+
+        def _fill_defaults(*_):
+            pk = _get_pk()
+            pcfg = _get_pcfg()
+            known_url = pcfg.get("base_url", "")
+            if known_url:
+                url_entry.delete(0, "end")
+                url_entry.insert(0, known_url)
+            known = _KNOWN.get(pk, [])
+            def_model = DEFAULT_MODELS.get(pk, "")
+            if known:
+                _populate_models(known, select=def_model if def_model in known else known[0])
+            else:
+                _populate_models([def_model] if def_model else [""])
+            test_status_var.set("")
+
+        def _fetch_models():
+            pk = _get_pk()
+            pcfg = _get_pcfg()
+            base = _current_base()
+            key = _current_key()
+            test_status_var.set("Fetching models...")
+            models = []
+            if base and key and pcfg.get("sdk") == "openai":
+                try:
+                    import requests as req
+                    resp = req.get(f"{base}/models",
+                                   headers={"Authorization": f"Bearer {key}"}, timeout=10)
+                    data = resp.json()
+                    models = sorted(m.get("id", "") for m in data.get("data", []) if m.get("id"))
+                    test_status_var.set(f"Loaded {len(models)} models" if models else "No models returned")
+                except Exception as e:
+                    test_status_var.set(f"Load failed: {e}")
+            else:
+                known = _KNOWN.get(pk, [])
+                if known:
+                    _populate_models(known)
+                    test_status_var.set(f"Using {len(known)} preset models")
+                else:
+                    test_status_var.set("Enter API key and Base URL, then load")
+                return
+            if models:
+                _populate_models(models)
+            else:
+                def_model = DEFAULT_MODELS.get(pk, "")
+                _populate_models([def_model] if def_model else [""])
+
+        def _test_connection():
+            pk = _get_pk()
+            pcfg = _get_pcfg()
+            base = _current_base()
+            key = _current_key()
+            model = model_var.get()
+
+            if not key:
+                test_status_var.set("Enter an API key first")
+                return
+
+            test_btn.configure(text="Testing...", state="disabled")
+            test_status_var.set("Testing...")
+            dlg.update()
+
+            try:
+                start = _time.time()
+                if pcfg.get("sdk") == "google":
+                    try:
+                        from google import genai
+                        client = genai.Client(api_key=key)
+                        client.models.generate_content(model=model or "gemini-2.0-flash", contents="Reply OK")
+                    except ImportError:
+                        import google.generativeai as genai
+                        genai.configure(api_key=key)
+                        gm = genai.GenerativeModel(model or "gemini-2.0-flash")
+                        gm.generate_content("Reply OK")
+                else:
+                    from openai import OpenAI
+                    client = OpenAI(api_key=key, base_url=base or None)
+                    client.chat.completions.create(
+                        model=model or DEFAULT_MODELS.get(pk, "gpt-4o"),
+                        messages=[{"role": "user", "content": "Reply with OK"}],
+                        max_tokens=5,
+                    )
+                elapsed = (_time.time() - start) * 1000
+                test_status_var.set(f"\u2713 Connected ({elapsed:.0f}ms)")
+            except Exception as e:
+                test_status_var.set(f"\u2717 Failed: {e}")
+            finally:
+                test_btn.configure(text="Test Connection", state="normal")
+
+        # ── wire up ──────────────────────────────────────────
+
+        provider_menu.configure(command=_fill_defaults)
+        load_models_btn.configure(command=_fetch_models)
+        test_btn.configure(command=_test_connection)
+        _fill_defaults()
+
+        btn_frame = ctk.CTkFrame(panel, fg_color="transparent")
+        btn_frame.grid(row=ROW["b"] + 1, column=0, columnspan=3, pady=(12, 12))
+
+        def _apply():
+            cfg.PROVIDER = _get_pk()
+            cfg.API_KEY = _current_key()
+            cfg.BASE_URL = _current_base()
+            cfg.MODEL = model_var.get()
+            dlg.destroy()
+
+        cancel_btn = ctk.CTkButton(btn_frame, text="Cancel", font=("Helvetica", 11),
+                       width=80, command=dlg.destroy)
+        _style_btn(cancel_btn)
+        cancel_btn.pack(side="right", padx=(6, 0))
+        apply_btn = ctk.CTkButton(btn_frame, text="Apply", font=("Helvetica", 11),
+                       width=80, command=_apply)
+        _style_btn(apply_btn, accent=True)
+        apply_btn.pack(side="right", padx=6)
 
     def _set_running(self, running):
         self._running = running
@@ -340,11 +535,13 @@ class App(ctk.CTk):
         self.run_btn.configure(state=state)
         self.go_btn.configure(state=state)
         self.topic_entry.configure(state=state)
-        self.model_selector.configure_state(state)
+        self.logo_btn.configure(state=state)
+        self.logo_corner_menu.configure(state=state)
         if running:
-            self.run_btn.configure(text="Running...")
+            self.run_btn.configure(text="\u25b6  Running...", fg_color=ACCENT2)
         else:
-            self.run_btn.configure(text="Run Pipeline")
+            self.run_btn.configure(text="\u25b6  Run Pipeline")
+            _style_btn(self.run_btn, accent=True)
 
     def _on_run(self):
         if self._running:
@@ -368,14 +565,6 @@ class App(ctk.CTk):
         self._set_running(True)
         threading.Thread(target=self._execute, args=(topic,), daemon=True).start()
 
-    def _refresh_model_combo(self):
-        from config import cfg
-        current_model = cfg.FREELLMAPI_MODEL
-        model_list = self._models if self._models else [current_model]
-        if current_model not in model_list:
-            model_list = [current_model] + model_list
-        self.model_selector.configure_values(model_list, initial=current_model)
-
     def _execute(self, topic):
         old_out = sys.stdout
         old_err = sys.stderr
@@ -386,7 +575,10 @@ class App(ctk.CTk):
 
         try:
             from main import run_pipeline
-            run_pipeline(dry_run=False, custom_topic=topic)
+            logo_path = self._logo_path.get() or None
+            logo_corner = self._CORNER_MAP.get(self.logo_corner_var.get(), "br")
+            run_pipeline(dry_run=False, custom_topic=topic,
+                         logo_path=logo_path, logo_corner=logo_corner)
         except Exception as e:
             print(f"\nError: {e}")
             import traceback
