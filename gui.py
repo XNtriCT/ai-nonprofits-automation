@@ -91,12 +91,11 @@ class ModelDropdown(ctk.CTkFrame):
     """Dropdown with CTkScrollableFrame — mousewheel works natively on the list."""
 
     def __init__(self, master, **kwargs):
+        self._var = kwargs.pop("variable", tk.StringVar())
         super().__init__(master, **kwargs)
         self._values = []
         self._dropdown = None
         self.grid_columnconfigure(0, weight=1)
-
-        self._var = tk.StringVar()
         self._display = ctk.CTkEntry(
             self, font=("Helvetica", 11),
             fg_color=INPUT_BG, text_color=TEXT,
@@ -193,8 +192,6 @@ class ModelDropdown(ctk.CTkFrame):
     def configure(self, **kwargs):
         if "values" in kwargs:
             self._values = kwargs.pop("values")
-        if "variable" in kwargs:
-            self._var = kwargs.pop("variable")
         super().configure(**kwargs)
 
     def cget(self, attr):
