@@ -13,7 +13,7 @@ PROVIDER_CONFIGS = {
 }
 
 DEFAULT_MODELS = {
-    "freellmapi": "gpt-4o",
+    "freellmapi": "auto",
     "openrouter": "openai/gpt-oss-120b:free",
     "groq": "llama-3.3-70b-versatile",
     "deepseek": "deepseek-v4-flash",

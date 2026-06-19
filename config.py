@@ -21,7 +21,7 @@ class Config:
     # Legacy FreeLLMAPI-specific (fallback when generic fields are empty)
     FREELLMAPI_BASE = os.getenv("FREELLMAPI_BASE", "http://172.24.197.38:3001/v1")
     FREELLMAPI_KEY = os.getenv("FREELLMAPI_KEY", "freellmapi-c8622568e26da22a29187a370a863297a231ce423929b7ad")
-    FREELLMAPI_MODEL = os.getenv("FREELLMAPI_MODEL", "gpt-4o")
+    FREELLMAPI_MODEL = os.getenv("FREELLMAPI_MODEL", "auto")
 
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")

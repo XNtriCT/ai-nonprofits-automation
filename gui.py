@@ -612,7 +612,7 @@ class App(ctk.CTk):
             _style_btn(self.run_btn, accent=True)
 
     _KNOWN_MODELS = {
-        "freellmapi": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+        "freellmapi": ["auto", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
         "openrouter": ["openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free", "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free", "meta-llama/llama-3.3-70b-instruct:free"],
         "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "meta-llama/llama-4-maverick-17b-128e-instruct", "meta-llama/llama-4-scout-17b-16e-instruct", "mixtral-8x7b-32768", "gemma2-9b-it", "deepseek-r1-distill-llama-70b"],
         "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro"],
