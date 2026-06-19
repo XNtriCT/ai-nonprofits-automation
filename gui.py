@@ -87,6 +87,129 @@ class LogRedirector(io.StringIO):
 
 
 
+class ModelDropdown(ctk.CTkFrame):
+    """Dropdown with CTkScrollableFrame — mousewheel works natively on the list."""
+
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        self._values = []
+        self._dropdown = None
+        self.grid_columnconfigure(0, weight=1)
+
+        self._var = tk.StringVar()
+        self._display = ctk.CTkEntry(
+            self, font=("Helvetica", 11),
+            fg_color=INPUT_BG, text_color=TEXT,
+            border_color=BORDER, border_width=1,
+            state="readonly",
+        )
+        self._display.grid(row=0, column=0, sticky="ew")
+        self._display.bind("<Button-1>", self._toggle)
+        self._display.bind("<MouseWheel>", self._on_wheel)
+        self._display.bind("<Button-4>", self._on_wheel)
+        self._display.bind("<Button-5>", self._on_wheel)
+
+        self._btn = ctk.CTkButton(
+            self, text="\u25bc", width=34,
+            font=("Helvetica", 9),
+            fg_color=SURFACE2, text_color=TEXT,
+            hover_color=SURFACE3,
+            command=self._toggle,
+        )
+        self._btn.grid(row=0, column=1)
+
+    def _toggle(self, event=None):
+        if self._dropdown:
+            self._close()
+        else:
+            self._open()
+
+    def _on_wheel(self, event):
+        vals = self._values
+        if not vals:
+            return
+        cur = self._var.get()
+        try:
+            i = vals.index(cur)
+        except ValueError:
+            i = -1
+        d = -1 if (event.delta > 0 or event.num == 4) else 1
+        i = max(0, min(len(vals) - 1, i + d))
+        self._var.set(vals[i])
+        self._sync_display(vals[i])
+
+    def _open(self):
+        if not self._values:
+            return
+        x = self.winfo_rootx()
+        y = self.winfo_rooty() + self.winfo_height()
+        w = self.winfo_width()
+        h = min(280, len(self._values) * 30 + 8)
+
+        self._dropdown = ctk.CTkToplevel(self)
+        self._dropdown.overrideredirect(True)
+        self._dropdown.configure(fg_color=SURFACE)
+        self._dropdown.geometry(f"{w}x{h}+{x}+{y}")
+
+        scroll = ctk.CTkScrollableFrame(
+            self._dropdown,
+            fg_color=SURFACE,
+            scrollbar_button_color=SURFACE2,
+            scrollbar_button_hover_color=SURFACE3,
+        )
+        scroll.pack(fill="both", expand=True)
+
+        for val in self._values:
+            active = (val == self._var.get())
+            item = ctk.CTkButton(
+                scroll, text=val,
+                font=("Helvetica", 11),
+                fg_color=SURFACE2 if active else "transparent",
+                text_color=TEXT, hover_color=SURFACE2,
+                anchor="w",
+                command=lambda v=val: self._select(v),
+            )
+            item.pack(fill="x", padx=4, pady=1)
+
+        self._dropdown.focus_set()
+        self._dropdown.bind("<FocusOut>", lambda e: self._close())
+
+    def _select(self, value):
+        self._var.set(value)
+        self._sync_display(value)
+        self._close()
+
+    def _sync_display(self, value):
+        self._display.configure(state="normal")
+        self._display.delete(0, "end")
+        self._display.insert(0, value)
+        self._display.configure(state="readonly")
+
+    def _close(self):
+        if self._dropdown:
+            self._dropdown.destroy()
+            self._dropdown = None
+
+    def configure(self, **kwargs):
+        if "values" in kwargs:
+            self._values = kwargs.pop("values")
+        if "variable" in kwargs:
+            self._var = kwargs.pop("variable")
+        super().configure(**kwargs)
+
+    def cget(self, attr):
+        if attr == "values":
+            return self._values
+        return super().cget(attr)
+
+    def get(self):
+        return self._var.get()
+
+    def set(self, value):
+        self._var.set(value)
+        self._sync_display(value)
+
+
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -262,22 +385,10 @@ class App(ctk.CTk):
             text_color=TEXT2,
         ).grid(row=0, column=0, padx=(16, 8), pady=(8, 8), sticky="w")
 
-        self.model_var = tk.StringVar(value="")
-        self.model_combo = ctk.CTkComboBox(
-            model_frame, values=[""],
-            variable=self.model_var,
-            font=("Helvetica", 11),
-            text_color=TEXT, fg_color=INPUT_BG,
-            border_color=BORDER, border_width=1,
-            button_color=SURFACE2, button_hover_color=SURFACE3,
-            dropdown_fg_color=SURFACE, dropdown_text_color=TEXT,
-            dropdown_hover_color=SURFACE2,
-        )
-        self.model_combo.grid(row=0, column=1, padx=(0, 16), pady=(8, 8), sticky="ew")
-        self.model_combo.bind("<MouseWheel>", self._on_model_scroll)
-        self.model_combo.bind("<Button-4>", self._on_model_scroll)
-        self.model_combo.bind("<Button-5>", self._on_model_scroll)
-        self.model_var.trace_add("write", lambda *_: setattr(cfg, "MODEL", self.model_var.get()))
+        self._model_var = tk.StringVar(value="")
+        self._model_var.trace_add("write", lambda *_: setattr(cfg, "MODEL", self._model_var.get()))
+        self.model_drop = ModelDropdown(model_frame, variable=self._model_var)
+        self.model_drop.grid(row=0, column=1, padx=(0, 16), pady=(8, 8), sticky="ew")
 
         # ── Run button ──────────────────────────────────────
         self.run_btn = ctk.CTkButton(
@@ -329,20 +440,20 @@ class App(ctk.CTk):
 
         dlg = ctk.CTkToplevel(self)
         dlg.title("API Settings")
-        dlg.geometry("540x360")
+        dlg.geometry("540x400")
         dlg.configure(fg_color=BG_DEEP)
         dlg.resizable(False, False)
         dlg.transient(self)
         dlg.grab_set()
 
-        panel = _glass_panel(dlg)
-        panel.pack(fill="both", expand=True, padx=20, pady=18)
+        panel = ctk.CTkFrame(dlg, fg_color=SURFACE, border_color=BORDER, border_width=1, corner_radius=8)
+        panel.pack(fill="both", expand=True, padx=16, pady=14)
         panel.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
             panel, text="API Settings",
             font=("Helvetica", 13, "normal"), text_color=TEXT,
-        ).grid(row=0, column=0, columnspan=3, padx=16, pady=(14, 10), sticky="w")
+        ).grid(row=0, column=0, columnspan=2, padx=16, pady=(14, 10), sticky="w")
 
         _deco_line(panel, 1, 0, 16, (0, 6))
 
@@ -495,27 +606,13 @@ class App(ctk.CTk):
         self.topic_entry.configure(state=state)
         self.logo_btn.configure(state=state)
         self.logo_corner_menu.configure(state=state)
-        self.model_combo.configure(state="disabled" if running else "normal")
+        self.model_drop._display.configure(state="disabled" if running else "readonly")
+        self.model_drop._btn.configure(state=state)
         if running:
             self.run_btn.configure(text="\u25b6  Running...", fg_color=ACCENT2)
         else:
             self.run_btn.configure(text="\u25b6  Run Pipeline")
             _style_btn(self.run_btn, accent=True)
-
-    def _on_model_scroll(self, event):
-        values = self.model_combo.cget("values")
-        if not values:
-            return
-        current = self.model_var.get()
-        try:
-            idx = values.index(current)
-        except ValueError:
-            idx = -1
-        if event.delta > 0 or event.num == 4:
-            idx = max(0, idx - 1)
-        else:
-            idx = min(len(values) - 1, idx + 1)
-        self.model_var.set(values[idx])
 
     def _refresh_models(self):
         from api_client import PROVIDER_CONFIGS, DEFAULT_MODELS
@@ -533,21 +630,27 @@ class App(ctk.CTk):
         models = []
         if cfg.BASE_URL and cfg.API_KEY and pcfg.get("sdk") == "openai":
             try:
+                print(f"[models] Fetching {cfg.BASE_URL}/models ...")
                 resp = req.get(f"{cfg.BASE_URL}/models",
                                headers={"Authorization": f"Bearer {cfg.API_KEY}"}, timeout=10)
                 data = resp.json()
                 models = sorted(m.get("id", "") for m in data.get("data", []) if m.get("id"))
-            except Exception:
-                pass
+                print(f"[models] Got {len(models)} live models")
+            except Exception as e:
+                print(f"[models] Fetch failed: {e} — using presets")
         if not models:
             models = _KNOWN.get(provider, [])
+            if models:
+                print(f"[models] Using {len(models)} presets for {provider}")
         if not models:
             default = DEFAULT_MODELS.get(provider, "")
             models = [default] if default else [""]
-        self.model_combo.configure(values=models)
-        current = self.model_var.get()
+            print(f"[models] Default fallback: {models}")
+        self.model_drop.configure(values=models)
+        current = self._model_var.get()
         if current not in models:
-            self.model_var.set(models[0] if models else "")
+            self._model_var.set(models[0] if models else "")
+        print(f"[models] Active: {self._model_var.get()}")
 
     def _on_run(self):
         if self._running:
