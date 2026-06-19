@@ -6,6 +6,7 @@ import tkinter as tk
 from pathlib import Path
 
 import customtkinter as ctk
+from config import cfg
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
@@ -106,10 +107,7 @@ class App(ctk.CTk):
 
         self._build_ui()
 
-        from config import cfg
-        from api_client import DEFAULT_MODELS
-        self.model_var.set(cfg.MODEL or DEFAULT_MODELS.get(cfg.PROVIDER, ""))
-        self.model_menu.configure(values=[cfg.MODEL] if cfg.MODEL else [DEFAULT_MODELS.get(cfg.PROVIDER, "")])
+        self.after(100, self._refresh_models)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -265,14 +263,21 @@ class App(ctk.CTk):
         ).grid(row=0, column=0, padx=(16, 8), pady=(8, 8), sticky="w")
 
         self.model_var = tk.StringVar(value="")
-        self.model_menu = ctk.CTkOptionMenu(
+        self.model_combo = ctk.CTkComboBox(
             model_frame, values=[""],
-            font=("Helvetica", 11), text_color=TEXT, fg_color=SURFACE2,
+            variable=self.model_var,
+            font=("Helvetica", 11),
+            text_color=TEXT, fg_color=INPUT_BG,
+            border_color=BORDER, border_width=1,
             button_color=SURFACE2, button_hover_color=SURFACE3,
             dropdown_fg_color=SURFACE, dropdown_text_color=TEXT,
-            dropdown_hover_color=SURFACE2, variable=self.model_var,
+            dropdown_hover_color=SURFACE2,
         )
-        self.model_menu.grid(row=0, column=1, padx=(0, 16), pady=(8, 8), sticky="ew")
+        self.model_combo.grid(row=0, column=1, padx=(0, 16), pady=(8, 8), sticky="ew")
+        self.model_combo.bind("<MouseWheel>", self._on_model_scroll)
+        self.model_combo.bind("<Button-4>", self._on_model_scroll)
+        self.model_combo.bind("<Button-5>", self._on_model_scroll)
+        self.model_var.trace_add("write", lambda *_: setattr(cfg, "MODEL", self.model_var.get()))
 
         # ── Run button ──────────────────────────────────────
         self.run_btn = ctk.CTkButton(
@@ -319,13 +324,12 @@ class App(ctk.CTk):
     }
 
     def _on_settings(self):
-        from config import cfg
         from api_client import PROVIDER_CONFIGS, DEFAULT_MODELS
         import time as _time
 
         dlg = ctk.CTkToplevel(self)
         dlg.title("API Settings")
-        dlg.geometry("540x480")
+        dlg.geometry("540x360")
         dlg.configure(fg_color=BG_DEEP)
         dlg.resizable(False, False)
         dlg.transient(self)
@@ -346,16 +350,8 @@ class App(ctk.CTk):
         provider_labels = [PROVIDER_CONFIGS[k]["label"] for k in provider_keys]
         label_to_key = {PROVIDER_CONFIGS[k]["label"]: k for k in provider_keys}
 
-        _KNOWN = {
-            "freellmapi": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
-            "openrouter": ["openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free", "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free", "meta-llama/llama-3.3-70b-instruct:free"],
-            "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "meta-llama/llama-4-maverick-17b-128e-instruct", "meta-llama/llama-4-scout-17b-16e-instruct", "mixtral-8x7b-32768", "gemma2-9b-it", "deepseek-r1-distill-llama-70b"],
-            "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro"],
-            "google": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-pro", "gemini-1.5-pro", "gemini-1.5-flash"],
-        }
-
-        ROW = {"p": 2, "k": 3, "u": 4, "m": 5, "t": 6, "b": 7}
-        _col = {"l": 0, "f": 1, "b": 2}
+        ROW = {"p": 2, "k": 3, "u": 4, "t": 5, "b": 6}
+        _col = {"l": 0, "f": 1}
 
         def _dlg_label(text, r):
             ctk.CTkLabel(panel, text=text, font=("Helvetica", 11),
@@ -384,25 +380,6 @@ class App(ctk.CTk):
         url_entry.insert(0, cfg.BASE_URL)
         url_entry.grid(row=ROW["u"], column=_col["f"], pady=7, sticky="ew")
 
-        _dlg_label("Model", ROW["m"])
-        model_var = tk.StringVar(value="")
-        model_menu = ctk.CTkOptionMenu(
-            panel, values=[""],
-            font=("Helvetica", 11), text_color=TEXT, fg_color=SURFACE2,
-            button_color=SURFACE2, button_hover_color=SURFACE,
-            dropdown_fg_color=SURFACE, dropdown_text_color=TEXT,
-            dropdown_hover_color=SURFACE2, variable=model_var,
-        )
-        model_menu.grid(row=ROW["m"], column=_col["f"], pady=7, sticky="ew")
-
-        load_models_btn = ctk.CTkButton(
-            panel, text="\u21bb Load",
-            font=("Helvetica", 10, "normal"),
-            width=60, height=30,
-        )
-        _style_btn(load_models_btn)
-        load_models_btn.grid(row=ROW["m"], column=_col["b"], padx=(8, 16), pady=7)
-
         test_btn = ctk.CTkButton(
             panel, text="Test Connection",
             font=("Helvetica", 11, "normal"), height=32,
@@ -415,10 +392,10 @@ class App(ctk.CTk):
             panel, textvariable=test_status_var,
             font=("Helvetica", 10), text_color=TEXT2, anchor="w",
         )
-        test_status_label.grid(row=ROW["t"], column=_col["f"], columnspan=2, padx=(12, 16), pady=7, sticky="w")
+        test_status_label.grid(row=ROW["t"], column=_col["f"], padx=(12, 16), pady=7, sticky="w")
 
         sep = ctk.CTkFrame(panel, height=1, fg_color=BORDER)
-        sep.grid(row=ROW["b"], column=0, columnspan=3, padx=16, pady=(6, 2), sticky="ew")
+        sep.grid(row=ROW["b"], column=0, columnspan=2, padx=16, pady=(6, 2), sticky="ew")
 
         # ── helpers ──────────────────────────────────────────
 
@@ -434,13 +411,6 @@ class App(ctk.CTk):
         def _current_key():
             return key_entry.get().strip()
 
-        def _populate_models(models, select=None):
-            if not models:
-                models = [DEFAULT_MODELS.get(_get_pk(), "")]
-            current = select or model_var.get()
-            model_menu.configure(values=models)
-            model_var.set(current if current in models else models[0])
-
         def _fill_defaults(*_):
             pk = _get_pk()
             pcfg = _get_pcfg()
@@ -448,51 +418,14 @@ class App(ctk.CTk):
             if known_url:
                 url_entry.delete(0, "end")
                 url_entry.insert(0, known_url)
-            known = _KNOWN.get(pk, [])
-            def_model = DEFAULT_MODELS.get(pk, "")
-            if known:
-                _populate_models(known, select=def_model if def_model in known else known[0])
-            else:
-                _populate_models([def_model] if def_model else [""])
             test_status_var.set("")
-
-        def _fetch_models():
-            pk = _get_pk()
-            pcfg = _get_pcfg()
-            base = _current_base()
-            key = _current_key()
-            test_status_var.set("Fetching models...")
-            models = []
-            if base and key and pcfg.get("sdk") == "openai":
-                try:
-                    import requests as req
-                    resp = req.get(f"{base}/models",
-                                   headers={"Authorization": f"Bearer {key}"}, timeout=10)
-                    data = resp.json()
-                    models = sorted(m.get("id", "") for m in data.get("data", []) if m.get("id"))
-                    test_status_var.set(f"Loaded {len(models)} models" if models else "No models returned")
-                except Exception as e:
-                    test_status_var.set(f"Load failed: {e}")
-            else:
-                known = _KNOWN.get(pk, [])
-                if known:
-                    _populate_models(known)
-                    test_status_var.set(f"Using {len(known)} preset models")
-                else:
-                    test_status_var.set("Enter API key and Base URL, then load")
-                return
-            if models:
-                _populate_models(models)
-            else:
-                def_model = DEFAULT_MODELS.get(pk, "")
-                _populate_models([def_model] if def_model else [""])
 
         def _test_connection():
             pk = _get_pk()
             pcfg = _get_pcfg()
             base = _current_base()
             key = _current_key()
-            model = model_var.get()
+            model = self.model_var.get() or DEFAULT_MODELS.get(pk, "")
 
             if not key:
                 test_status_var.set("Enter an API key first")
@@ -518,7 +451,7 @@ class App(ctk.CTk):
                     from openai import OpenAI
                     client = OpenAI(api_key=key, base_url=base or None)
                     client.chat.completions.create(
-                        model=model or DEFAULT_MODELS.get(pk, "gpt-4o"),
+                        model=model or "gpt-4o",
                         messages=[{"role": "user", "content": "Reply with OK"}],
                         max_tokens=5,
                     )
@@ -532,25 +465,18 @@ class App(ctk.CTk):
         # ── wire up ──────────────────────────────────────────
 
         provider_menu.configure(command=_fill_defaults)
-        load_models_btn.configure(command=_fetch_models)
         test_btn.configure(command=_test_connection)
         _fill_defaults()
-        if self.model_var.get():
-            current = self.model_var.get()
-            vals = model_menu.cget("values")
-            if vals and current in vals:
-                model_var.set(current)
 
         btn_frame = ctk.CTkFrame(panel, fg_color="transparent")
-        btn_frame.grid(row=ROW["b"] + 1, column=0, columnspan=3, pady=(12, 12))
+        btn_frame.grid(row=ROW["b"] + 1, column=0, columnspan=2, pady=(12, 12))
 
         def _apply():
             cfg.PROVIDER = _get_pk()
             cfg.API_KEY = _current_key()
             cfg.BASE_URL = _current_base()
-            cfg.MODEL = model_var.get()
-            self.model_var.set(model_var.get())
             dlg.destroy()
+            self.after(200, self._refresh_models)
 
         cancel_btn = ctk.CTkButton(btn_frame, text="Cancel", font=("Helvetica", 11),
                        width=80, command=dlg.destroy)
@@ -569,12 +495,59 @@ class App(ctk.CTk):
         self.topic_entry.configure(state=state)
         self.logo_btn.configure(state=state)
         self.logo_corner_menu.configure(state=state)
-        self.model_menu.configure(state=state)
+        self.model_combo.configure(state="disabled" if running else "normal")
         if running:
             self.run_btn.configure(text="\u25b6  Running...", fg_color=ACCENT2)
         else:
             self.run_btn.configure(text="\u25b6  Run Pipeline")
             _style_btn(self.run_btn, accent=True)
+
+    def _on_model_scroll(self, event):
+        values = self.model_combo.cget("values")
+        if not values:
+            return
+        current = self.model_var.get()
+        try:
+            idx = values.index(current)
+        except ValueError:
+            idx = -1
+        if event.delta > 0 or event.num == 4:
+            idx = max(0, idx - 1)
+        else:
+            idx = min(len(values) - 1, idx + 1)
+        self.model_var.set(values[idx])
+
+    def _refresh_models(self):
+        from api_client import PROVIDER_CONFIGS, DEFAULT_MODELS
+        import requests as req
+
+        provider = cfg.PROVIDER
+        pcfg = PROVIDER_CONFIGS.get(provider, PROVIDER_CONFIGS["custom"])
+        _KNOWN = {
+            "freellmapi": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+            "openrouter": ["openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free", "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free", "meta-llama/llama-3.3-70b-instruct:free"],
+            "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "meta-llama/llama-4-maverick-17b-128e-instruct", "meta-llama/llama-4-scout-17b-16e-instruct", "mixtral-8x7b-32768", "gemma2-9b-it", "deepseek-r1-distill-llama-70b"],
+            "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro"],
+            "google": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-pro", "gemini-1.5-pro", "gemini-1.5-flash"],
+        }
+        models = []
+        if cfg.BASE_URL and cfg.API_KEY and pcfg.get("sdk") == "openai":
+            try:
+                resp = req.get(f"{cfg.BASE_URL}/models",
+                               headers={"Authorization": f"Bearer {cfg.API_KEY}"}, timeout=10)
+                data = resp.json()
+                models = sorted(m.get("id", "") for m in data.get("data", []) if m.get("id"))
+            except Exception:
+                pass
+        if not models:
+            models = _KNOWN.get(provider, [])
+        if not models:
+            default = DEFAULT_MODELS.get(provider, "")
+            models = [default] if default else [""]
+        self.model_combo.configure(values=models)
+        current = self.model_var.get()
+        if current not in models:
+            self.model_var.set(models[0] if models else "")
 
     def _on_run(self):
         if self._running:
