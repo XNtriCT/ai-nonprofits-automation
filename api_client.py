@@ -3,7 +3,7 @@
 from config import cfg
 
 PROVIDER_CONFIGS = {
-    "freellmapi": {"base_url": "", "sdk": "openai", "label": "FreeLLMAPI"},
+    "freellmapi": {"base_url": "http://172.24.197.38:3001/v1", "sdk": "openai", "label": "FreeLLMAPI"},
     "openrouter": {"base_url": "https://openrouter.ai/api/v1", "sdk": "openai", "label": "OpenRouter"},
     "groq": {"base_url": "https://api.groq.com/openai/v1", "sdk": "openai", "label": "Groq"},
     "deepseek": {"base_url": "https://api.deepseek.com", "sdk": "openai", "label": "DeepSeek"},

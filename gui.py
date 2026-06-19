@@ -226,9 +226,8 @@ class App(ctk.CTk):
         self.after(50, self._redraw_bg)
 
         self._build_ui()
-
-        self.after(100, self._refresh_models)
-
+        self._apply_presets()
+        self.after(50, self._refresh_models)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _redraw_bg(self):
@@ -522,10 +521,8 @@ class App(ctk.CTk):
         def _fill_defaults(*_):
             pk = _get_pk()
             pcfg = _get_pcfg()
-            known_url = pcfg.get("base_url", "")
-            if known_url:
-                url_entry.delete(0, "end")
-                url_entry.insert(0, known_url)
+            url_entry.delete(0, "end")
+            url_entry.insert(0, pcfg.get("base_url", ""))
             test_status_var.set("")
 
         def _test_connection():
@@ -533,7 +530,7 @@ class App(ctk.CTk):
             pcfg = _get_pcfg()
             base = _current_base()
             key = _current_key()
-            model = self.model_var.get() or DEFAULT_MODELS.get(pk, "")
+            model = self._model_var.get() or DEFAULT_MODELS.get(pk, "")
 
             if not key:
                 test_status_var.set("Enter an API key first")
@@ -574,7 +571,6 @@ class App(ctk.CTk):
 
         provider_menu.configure(command=_fill_defaults)
         test_btn.configure(command=_test_connection)
-        _fill_defaults()
 
         btn_frame = ctk.CTkFrame(panel, fg_color="transparent")
         btn_frame.grid(row=ROW["b"] + 1, column=0, columnspan=2, pady=(12, 12))
@@ -611,42 +607,60 @@ class App(ctk.CTk):
             self.run_btn.configure(text="\u25b6  Run Pipeline")
             _style_btn(self.run_btn, accent=True)
 
-    def _refresh_models(self):
-        from api_client import PROVIDER_CONFIGS, DEFAULT_MODELS
-        import requests as req
+    _KNOWN_MODELS = {
+        "freellmapi": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+        "openrouter": ["openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free", "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free", "meta-llama/llama-3.3-70b-instruct:free"],
+        "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "meta-llama/llama-4-maverick-17b-128e-instruct", "meta-llama/llama-4-scout-17b-16e-instruct", "mixtral-8x7b-32768", "gemma2-9b-it", "deepseek-r1-distill-llama-70b"],
+        "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro"],
+        "google": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-pro", "gemini-1.5-pro", "gemini-1.5-flash"],
+    }
 
+    def _apply_presets(self):
+        """Populate model dropdown from presets immediately (no network)."""
         provider = cfg.PROVIDER
-        pcfg = PROVIDER_CONFIGS.get(provider, PROVIDER_CONFIGS["custom"])
-        _KNOWN = {
-            "freellmapi": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
-            "openrouter": ["openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free", "nvidia/nemotron-3-super-120b-a12b:free", "qwen/qwen3-coder:free", "meta-llama/llama-3.3-70b-instruct:free"],
-            "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "meta-llama/llama-4-maverick-17b-128e-instruct", "meta-llama/llama-4-scout-17b-16e-instruct", "mixtral-8x7b-32768", "gemma2-9b-it", "deepseek-r1-distill-llama-70b"],
-            "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro"],
-            "google": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-pro", "gemini-1.5-pro", "gemini-1.5-flash"],
-        }
-        models = []
-        if cfg.BASE_URL and cfg.API_KEY and pcfg.get("sdk") == "openai":
-            try:
-                print(f"[models] Fetching {cfg.BASE_URL}/models ...")
-                resp = req.get(f"{cfg.BASE_URL}/models",
-                               headers={"Authorization": f"Bearer {cfg.API_KEY}"}, timeout=10)
-                data = resp.json()
-                models = sorted(m.get("id", "") for m in data.get("data", []) if m.get("id"))
-                print(f"[models] Got {len(models)} live models")
-            except Exception as e:
-                print(f"[models] Fetch failed: {e} — using presets")
-        if not models:
-            models = _KNOWN.get(provider, [])
-            if models:
-                print(f"[models] Using {len(models)} presets for {provider}")
+        from api_client import DEFAULT_MODELS
+        models = self._KNOWN_MODELS.get(provider, [])
         if not models:
             default = DEFAULT_MODELS.get(provider, "")
             models = [default] if default else [""]
-            print(f"[models] Default fallback: {models}")
         self.model_drop.configure(values=models)
         current = self._model_var.get()
         if current not in models:
             self._model_var.set(models[0] if models else "")
+
+    def _refresh_models(self):
+        """Fetch live models in a thread so the UI never blocks."""
+        self._apply_presets()  # show presets immediately
+
+        provider = cfg.PROVIDER
+        from api_client import PROVIDER_CONFIGS, DEFAULT_MODELS
+        pcfg = PROVIDER_CONFIGS.get(provider, PROVIDER_CONFIGS["custom"])
+        if not (cfg.BASE_URL and cfg.API_KEY and pcfg.get("sdk") == "openai"):
+            return
+
+        def _fetch():
+            import requests as req
+            live = []
+            try:
+                print(f"[models] Fetching {cfg.BASE_URL}/models ...")
+                resp = req.get(f"{cfg.BASE_URL}/models",
+                               headers={"Authorization": f"Bearer {cfg.API_KEY}"}, timeout=8)
+                data = resp.json()
+                live = sorted(m.get("id", "") for m in data.get("data", []) if m.get("id"))
+                print(f"[models] Got {len(live)} live models")
+            except Exception as e:
+                print(f"[models] Fetch failed: {e}")
+                return
+            if live:
+                self.after(0, lambda: self._apply_live_models(live))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _apply_live_models(self, models):
+        self.model_drop.configure(values=models)
+        current = self._model_var.get()
+        if current not in models:
+            self._model_var.set(models[0])
         print(f"[models] Active: {self._model_var.get()}")
 
     def _on_run(self):
